@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>编辑题目</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { background: var(--bg); padding-bottom: 90px; }
+    .edit-header {
+      background: linear-gradient(135deg, #1a1a2e, #6C63FF);
+      padding: 40px 20px 32px;
+    }
+    .eh-title { font-size: 26px; font-weight: 800; color: #fff; }
+    .eh-sub   { font-size: 13px; color: rgba(255,255,255,.65); margin-top: 4px; }
+
+    /* 题目卡片 */
+    .q-card { position: relative; }
+    .qc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .qc-num { background: linear-gradient(135deg,var(--primary),var(--primary-light)); color:#fff; border-radius:14px; padding:4px 14px; font-size:13px; font-weight:700; }
+    .del-btn {
+      width: 34px; height: 34px; background: #fff0f0; border: none;
+      border-radius: 50%; color: var(--danger); font-size: 16px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+
+    /* 选项行 */
+    .opt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .correct-btn {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      border: 2px solid #ddd; background: #f8f8f8; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #aaa;
+      transition: all .15s;
+    }
+    .correct-btn.active { border-color: var(--success); background: var(--success); color: #fff; }
+    .opt-row input { flex: 1; padding: 12px 14px; }
+
+    /* 分值 */
+    .score-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+    .score-row input { width: 80px; text-align: center; font-size: 18px; font-weight: 800; color: var(--primary); padding: 10px; }
+    .score-unit { font-size: 14px; color: #888; }
+
+    /* 添加题目 */
+    .add-card {
+      margin: 0 16px 16px;
+      border: 2px dashed var(--primary-light); border-radius: 20px;
+      padding: 24px; text-align: center; cursor: pointer;
+      color: var(--primary); font-size: 15px; font-weight: 700;
+      background: rgba(108,99,255,.04);
+    }
+    .add-card:active { background: rgba(108,99,255,.1); }
+
+    /* 固定底部保存栏 */
+    .save-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(245,245,250,.96); padding: 12px 16px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 -4px 20px rgba(0,0,0,.08);
+      max-width: 480px; margin: 0 auto;
+    }
+    /* centering the fixed bar on desktop */
+    @media (min-width: 480px) { .save-bar { left: 50%; transform: translateX(-50%); width: 480px; } }
+  </style>
+</head>
+<body>
+<div class="edit-header">
+  <div class="eh-title">✏️ 编辑题目</div>
+  <div class="eh-sub" id="editSub">共 0 道题目</div>
+</div>
+
+<div id="questionList" style="margin-top:16px"></div>
+
+<div class="add-card" onclick="addQuestion()">＋ 添加题目</div>
+
+<div class="save-bar">
+  <button class="btn btn-primary" id="saveBtn" onclick="saveQuestions()">保存题目</button>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+<script>
+  const LABELS = ['A','B','C','D'];
+  let questions = [];
+  let saving = false;
+
+  QuizApp.reconnect('admin', (d) => {
+    questions = (d.questions || []).map(clone);
+    renderAll();
+
+    QuizApp.on('save_success', (data) => {
+      saving = false;
+      questions = data.questions.map(clone);
+      renderAll();
+      QuizApp.toast('保存成功！');
+      setTimeout(() => location.href = '/admin.html', 800);
+    });
+    QuizApp.on('error', (data) => {
+      saving = false;
+      document.getElementById('saveBtn').disabled = false;
+      QuizApp.toast(data.message);
+    });
+  });
+
+  function clone(q) {
+    return { id: q.id || uid(), title: q.title || '', options: [...(q.options || ['','','',''])], correctAnswer: q.correctAnswer ?? 0, score: q.score || 10 };
+  }
+  function uid() { return 'q' + Date.now() + Math.random().toString(36).slice(2,6); }
+
+  function renderAll() {
+    document.getElementById('editSub').textContent = `共 ${questions.length} 道题目`;
+    const list = document.getElementById('questionList');
+    list.innerHTML = '';
+    questions.forEach((q, qi) => list.appendChild(buildCard(q, qi)));
+  }
+
+  function buildCard(q, qi) {
+    const card = document.createElement('div');
+    card.className = 'card q-card';
+    card.id = `card-${qi}`;
+
+    // 顶部
+    const header = document.createElement('div');
+    header.className = 'qc-header';
+    header.innerHTML = `<div class="qc-num">第 ${qi+1} 题</div>`;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn'; delBtn.textContent = '✕';
+    delBtn.onclick = () => deleteQuestion(qi);
+    header.appendChild(delBtn);
+    card.appendChild(header);
+
+    // 标题
+    const titleLabel = document.createElement('label'); titleLabel.textContent = '题目标题';
+    card.appendChild(titleLabel);
+    const titleInput = document.createElement('textarea');
+    titleInput.placeholder = '请输入题目内容...'; titleInput.value = q.title;
+    titleInput.oninput = (e) => { questions[qi].title = e.target.value; };
+    card.appendChild(titleInput);
+
+    // 选项
+    const optLabel = document.createElement('label');
+    optLabel.textContent = '选项（点击左侧圆钮设置正确答案）';
+    optLabel.style.marginTop = '14px';
+    card.appendChild(optLabel);
+
+    q.options.forEach((opt, oi) => {
+      const row = document.createElement('div'); row.className = 'opt-row';
+      const cb = document.createElement('button');
+      cb.className = `correct-btn ${q.correctAnswer === oi ? 'active' : ''}`;
+      cb.textContent = q.correctAnswer === oi ? '✓' : LABELS[oi];
+      cb.id = `cb-${qi}-${oi}`;
+      cb.onclick = () => setCorrect(qi, oi);
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = opt; inp.placeholder = `选项 ${LABELS[oi]}`;
+      inp.oninput = (e) => { questions[qi].options[oi] = e.target.value; };
+      row.appendChild(cb); row.appendChild(inp);
+      card.appendChild(row);
+    });
+
+    // 分值
+    const scoreLabel = document.createElement('label'); scoreLabel.textContent = '分值'; scoreLabel.style.marginTop = '10px';
+    card.appendChild(scoreLabel);
+    const scoreRow = document.createElement('div'); scoreRow.className = 'score-row';
+    const scoreInp = document.createElement('input');
+    scoreInp.type = 'number'; scoreInp.value = q.score; scoreInp.min = 1;
+    scoreInp.oninput = (e) => { questions[qi].score = parseInt(e.target.value) || 10; };
+    scoreRow.innerHTML = ''; scoreRow.appendChild(scoreInp);
+    const unit = document.createElement('span'); unit.className = 'score-unit'; unit.textContent = '分';
+    scoreRow.appendChild(unit);
+    card.appendChild(scoreRow);
+
+    return card;
+  }
+
+  function setCorrect(qi, oi) {
+    questions[qi].correctAnswer = oi;
+    // 更新所有按钮
+    questions[qi].options.forEach((_, idx) => {
+      const btn = document.getElementById(`cb-${qi}-${idx}`);
+      if (!btn) return;
+      btn.classList.toggle('active', idx === oi);
+      btn.textContent = idx === oi ? '✓' : LABELS[idx];
+    });
+  }
+
+  function addQuestion() {
+    questions.push({ id: uid(), title: '', options: ['','','',''], correctAnswer: 0, score: 10 });
+    renderAll();
+    // 滚到底部
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  }
+
+  function deleteQuestion(qi) {
+    if (!confirm(`删除第 ${qi+1} 题？`)) return;
+    questions.splice(qi, 1);
+    renderAll();
+  }
+
+  function saveQuestions() {
+    if (saving) return;
+    // 验证
+    for (let i = 0; i < questions.length; i++) {
+      if (!questions[i].title.trim()) return QuizApp.toast(`第 ${i+1} 题标题不能为空`);
+      for (let j = 0; j < questions[i].options.length; j++) {
+        if (!questions[i].options[j].trim()) return QuizApp.toast(`第 ${i+1} 题选项 ${LABELS[j]} 不能为空`);
+      }
+    }
+    if (!questions.length) return QuizApp.toast('请至少添加一道题');
+    saving = true;
+    document.getElementById('saveBtn').disabled = true;
+    QuizApp.send({ type: 'save_questions', questions });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>管理后台</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { background: var(--bg); }
+    .admin-header {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      padding: 40px 20px 32px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .ah-left .ah-title { font-size: 24px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+    .ah-stats { display: flex; gap: 24px; text-align: center; }
+    .ah-stat-num   { font-size: 32px; font-weight: 900; color: var(--primary); line-height: 1; }
+    .ah-stat-label { font-size: 12px; color: rgba(255,255,255,.5); margin-top: 2px; }
+
+    /* 进度卡片 */
+    .prog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .prog-title  { font-size: 17px; font-weight: 800; }
+    .prog-bar-wrap { height: 10px; background: var(--primary-bg); border-radius: 5px; overflow: hidden; margin-bottom: 20px; }
+    .prog-bar { height: 100%; background: linear-gradient(90deg,var(--primary),var(--success)); transition: width .3s; border-radius: 5px; }
+
+    /* 玩家列表 */
+    .player-list { display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; }
+    .player-row  { display: flex; align-items: center; background: #f8f7ff; border-radius: 14px; padding: 12px 14px; }
+    .pr-rank { width: 28px; font-size: 13px; color: #bbb; font-weight: 700; }
+    .pr-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: linear-gradient(135deg,var(--primary),var(--primary-light));
+      color: #fff; font-size: 15px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin-right: 10px; flex-shrink: 0;
+    }
+    .pr-name  { flex: 1; font-size: 14px; font-weight: 600; }
+    .pr-score { font-size: 16px; font-weight: 900; color: var(--primary); }
+
+    .empty-tip { text-align: center; color: #bbb; font-size: 14px; padding: 20px 0; }
+    .tip-warn  { font-size: 12px; color: #e03131; text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <!-- 顶部 -->
+  <div class="admin-header">
+    <div class="ah-left">
+      <div class="ah-title">管理后台</div>
+      <div id="statusBadge" class="badge badge-warn">等待中</div>
+    </div>
+    <div class="ah-stats">
+      <div>
+        <div class="ah-stat-num" id="statPlayers">0</div>
+        <div class="ah-stat-label">在线</div>
+      </div>
+      <div>
+        <div class="ah-stat-num" id="statQuestions">0</div>
+        <div class="ah-stat-label">题目</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进行中：题目进度 -->
+  <div class="card" id="runningCard" style="display:none">
+    <div class="prog-header">
+      <div class="prog-title">第 <span id="curQIdx">1</span> 题 / <span id="curQTotal">1</span> 题</div>
+      <div class="badge badge-success"><span id="answeredCount">0</span>/<span id="answeredTotal">0</span> 人已作答</div>
+    </div>
+    <div class="prog-bar-wrap"><div class="prog-bar" id="answerProgBar"></div></div>
+    <div class="btn-row">
+      <button class="btn btn-success" id="nextBtn" onclick="nextQuestion()">下一题 →</button>
+      <button class="btn btn-danger"  onclick="confirmEnd()">结束答题</button>
+    </div>
+  </div>
+
+  <!-- 等待中：操作 -->
+  <div class="card" id="waitingCard">
+    <div class="card-title">📋 题目管理</div>
+    <button class="btn btn-ghost" onclick="location.href='/edit.html'">编辑题目（共 <span id="qCountBtn">0</span> 题）</button>
+    <hr class="divider">
+    <div class="card-title">🚀 开始控制</div>
+    <button class="btn btn-primary" id="startBtn" onclick="confirmStart()" disabled>开始答题</button>
+    <div id="startTip" class="tip-warn"></div>
+  </div>
+
+  <!-- 已结束：操作 -->
+  <div class="card" id="endedCard" style="display:none">
+    <button class="btn btn-ghost mt16" onclick="confirmReset()">🔄 重新开始一轮</button>
+    <button class="btn btn-ghost mt16" onclick="location.href='/edit.html'" style="margin-top:12px">✏️ 编辑题目</button>
+  </div>
+
+  <!-- 玩家列表 -->
+  <div class="card">
+    <div class="card-title">👥 玩家列表（<span id="playerCountLabel">0</span>人）</div>
+    <div id="playerList"><div class="empty-tip">暂无玩家加入...</div></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+<script>
+  let state = { status: 'waiting', playerCount: 0, questionCount: 0, currentQuestionIndex: -1, players: [] };
+
+  QuizApp.reconnect('admin', (d) => {
+    applyState({
+      status:               d.status,
+      playerCount:          d.playerCount,
+      questionCount:        (d.questions || []).length,
+      currentQuestionIndex: d.currentQuestionIndex || -1,
+      players:              d.players || []
+    });
+
+    QuizApp.on('player_list', d2 => {
+      state.playerCount = d2.count;
+      state.players = d2.players || [];
+      updatePlayerList();
+      updateStartBtn();
+    });
+
+    QuizApp.on('quiz_started', () => {
+      state.status = 'running'; state.currentQuestionIndex = -1;
+      applyState(state);
+    });
+
+    QuizApp.on('question', d2 => {
+      state.currentQuestionIndex = d2.index;
+      state.questionCount = d2.total;
+      document.getElementById('curQIdx').textContent   = d2.index + 1;
+      document.getElementById('curQTotal').textContent  = d2.total;
+      document.getElementById('answeredCount').textContent = '0';
+      document.getElementById('answeredTotal').textContent = state.playerCount;
+      document.getElementById('answerProgBar').style.width = '0%';
+      document.getElementById('nextBtn').textContent = d2.index >= d2.total - 1 ? '⚠️ 已是最后一题' : '下一题 →';
+    });
+
+    QuizApp.on('question_status', d2 => {
+      if (d2.questionIndex === state.currentQuestionIndex) {
+        document.getElementById('answeredCount').textContent = d2.answeredCount;
+        const pct = state.playerCount > 0 ? d2.answeredCount / state.playerCount * 100 : 0;
+        document.getElementById('answerProgBar').style.width = pct + '%';
+      }
+    });
+
+    QuizApp.on('quiz_ended', d2 => {
+      state.status = 'ended';
+      applyState(state);
+      sessionStorage.setItem('ranking', JSON.stringify(d2.ranking));
+      location.href = '/result.html';
+    });
+
+    QuizApp.on('reset_success', () => {
+      state.status = 'waiting'; state.currentQuestionIndex = -1;
+      applyState(state);
+      QuizApp.toast('已重置，可重新开始');
+    });
+
+    QuizApp.on('save_success', d2 => {
+      state.questionCount = d2.questions.length;
+      document.getElementById('qCountBtn').textContent = state.questionCount;
+      document.getElementById('statQuestions').textContent = state.questionCount;
+      updateStartBtn();
+    });
+
+    QuizApp.on('error', d2 => QuizApp.toast(d2.message));
+  });
+
+  function applyState(s) {
+    Object.assign(state, s);
+    const status = s.status || state.status;
+
+    // 状态徽章
+    const badge = document.getElementById('statusBadge');
+    const map = { waiting: ['等待中','badge-warn'], running: ['进行中','badge-success'], ended: ['已结束','badge-danger'] };
+    badge.textContent = map[status][0];
+    badge.className   = `badge ${map[status][1]}`;
+
+    document.getElementById('waitingCard').style.display = status === 'waiting' ? 'block' : 'none';
+    document.getElementById('runningCard').style.display = status === 'running' ? 'block' : 'none';
+    document.getElementById('endedCard').style.display   = status === 'ended'   ? 'block' : 'none';
+
+    document.getElementById('statPlayers').textContent   = state.playerCount;
+    document.getElementById('statQuestions').textContent = state.questionCount;
+    document.getElementById('qCountBtn').textContent     = state.questionCount;
+    document.getElementById('playerCountLabel').textContent = state.playerCount;
+    document.getElementById('answeredTotal').textContent = state.playerCount;
+
+    updatePlayerList();
+    updateStartBtn();
+  }
+
+  function updatePlayerList() {
+    const list = document.getElementById('playerList');
+    if (!state.players.length) { list.innerHTML = '<div class="empty-tip">暂无玩家加入...</div>'; return; }
+    list.innerHTML = '';
+    const wrap = document.createElement('div'); wrap.className = 'player-list';
+    state.players.forEach((p, i) => {
+      const div = document.createElement('div');
+      div.className = 'player-row';
+      div.innerHTML = `
+        <div class="pr-rank">${i+1}</div>
+        <div class="pr-avatar">${p.name[0]}</div>
+        <div class="pr-name">${p.name}</div>
+        <div class="pr-score">${p.score} 分</div>`;
+      wrap.appendChild(div);
+    });
+    list.appendChild(wrap);
+  }
+
+  function updateStartBtn() {
+    const btn = document.getElementById('startBtn');
+    const tip = document.getElementById('startTip');
+    const ok  = state.playerCount > 0 && state.questionCount > 0;
+    btn.disabled = !ok;
+    tip.textContent = state.playerCount === 0 ? '⚠️ 暂无玩家加入' : state.questionCount === 0 ? '⚠️ 请先添加题目' : '';
+  }
+
+  function confirmStart() {
+    if (confirm(`当前共 ${state.playerCount} 名玩家，${state.questionCount} 道题目，确认开始？`)) {
+      QuizApp.send({ type: 'start_quiz' });
+    }
+  }
+  function nextQuestion() { QuizApp.send({ type: 'next_question' }); }
+  function confirmEnd() {
+    if (confirm('结束答题并显示最终排名？')) QuizApp.send({ type: 'end_quiz' });
+  }
+  function confirmReset() {
+    if (confirm('将清除所有分数并重新开始，确认吗？')) QuizApp.send({ type: 'reset_quiz' });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>答题中</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* 等待屏 */
+    .waiting {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 100vh; text-align: center; padding: 32px;
+    }
+    .waiting-icon { font-size: 72px; margin-bottom: 16px; }
+    .waiting-title { font-size: 26px; font-weight: 800; color: var(--primary); margin-bottom: 8px; }
+    .waiting-sub   { font-size: 14px; color: #999; margin-bottom: 32px; }
+
+    /* 答题区 */
+    .quiz-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 20px 16px 0;
+    }
+    .q-progress { font-size: 22px; font-weight: 800; color: var(--primary); }
+    .q-progress span { font-size: 14px; color: #aaa; }
+    .score-pill {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: #fff; border-radius: 20px; padding: 6px 16px;
+      font-size: 14px; font-weight: 700;
+    }
+
+    .prog-bar-wrap { height: 6px; background: var(--border); margin: 12px 16px; border-radius: 3px; overflow: hidden; }
+    .prog-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); transition: width .4s ease; border-radius: 3px; }
+
+    /* 题目卡片 */
+    .q-card {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      margin: 0 16px 20px; border-radius: 20px; padding: 24px;
+      position: relative; box-shadow: 0 12px 32px rgba(108,99,255,.3);
+    }
+    .q-score-tag {
+      position: absolute; top: 16px; right: 16px;
+      background: rgba(255,255,255,.2); color: #fff;
+      border-radius: 14px; padding: 4px 12px; font-size: 12px; font-weight: 700;
+    }
+    .q-text { font-size: 18px; font-weight: 700; color: #fff; line-height: 1.6; margin-top: 8px; }
+
+    /* 选项 */
+    .options { padding: 0 16px; display: flex; flex-direction: column; gap: 12px; }
+    .option {
+      display: flex; align-items: center; background: #fff;
+      border-radius: 16px; padding: 16px; border: 2px solid transparent;
+      box-shadow: 0 2px 10px rgba(0,0,0,.05); cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .option.selected { border-color: var(--primary); background: var(--primary-bg); }
+    .option.correct  { border-color: var(--success); background: #f0fff6; }
+    .option.wrong    { border-color: var(--danger);  background: #fff5f5; }
+
+    .opt-label {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; font-weight: 800; margin-right: 14px;
+    }
+    .option.correct .opt-label { background: var(--success); }
+    .option.wrong   .opt-label { background: var(--danger); }
+    .opt-text { flex: 1; font-size: 15px; color: var(--text); line-height: 1.5; }
+    .opt-mark { font-size: 22px; font-weight: 700; }
+    .opt-mark.c { color: var(--success); }
+    .opt-mark.w { color: var(--danger); }
+
+    /* 提交 */
+    .action-wrap { padding: 24px 16px 0; }
+
+    /* 结果横幅 */
+    .result-banner {
+      margin: 20px 16px 0; border-radius: 20px; padding: 28px 24px;
+      text-align: center; animation: slideUp .3s ease;
+    }
+    .banner-correct { background: linear-gradient(135deg, var(--success), var(--success-end)); box-shadow: 0 10px 28px rgba(67,233,123,.3); }
+    .banner-wrong   { background: linear-gradient(135deg, var(--danger), var(--danger-end));  box-shadow: 0 10px 28px rgba(255,107,107,.3); }
+    .banner-emoji { font-size: 48px; display: block; margin-bottom: 8px; }
+    .banner-title { font-size: 26px; font-weight: 800; color: #fff; }
+    .banner-score { font-size: 36px; font-weight: 900; color: #fff; margin: 4px 0; }
+    .banner-wait  { font-size: 13px; color: rgba(255,255,255,.8); margin-top: 6px; }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<!-- 等待屏 -->
+<div class="waiting" id="waitingScreen">
+  <div class="waiting-icon">⏳</div>
+  <div class="waiting-title">等待答题开始</div>
+  <div class="waiting-sub">管理员即将发布题目...</div>
+  <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+</div>
+
+<!-- 答题区 -->
+<div class="page" id="quizScreen" style="display:none">
+  <div class="quiz-header">
+    <div class="q-progress">第 <span id="qIdx">1</span> 题 <span>/ <span id="qTotal">1</span></span></div>
+    <div class="score-pill">💰 <span id="totalScore">0</span> 分</div>
+  </div>
+  <div class="prog-bar-wrap"><div class="prog-bar" id="progBar"></div></div>
+
+  <div class="q-card">
+    <div class="q-score-tag">+<span id="qScore">10</span> 分</div>
+    <div class="q-text" id="qText"></div>
+  </div>
+
+  <div class="options" id="optionsWrap"></div>
+
+  <div class="action-wrap" id="actionWrap">
+    <button class="btn btn-primary" id="submitBtn" onclick="submitAnswer()" disabled>提交答案</button>
+  </div>
+
+  <div id="resultBanner" style="display:none"></div>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+<script>
+  const LABELS = ['A','B','C','D'];
+  let currentQuestion = null;
+  let selectedAnswer = -1;
+  let submitted = false;
+
+  // 重连并等待题目
+  QuizApp.reconnect('player', () => {
+    QuizApp.on('question', showQuestion);
+    QuizApp.on('quiz_ended', d => {
+      sessionStorage.setItem('ranking', JSON.stringify(d.ranking));
+      location.href = '/result.html';
+    });
+    QuizApp.on('error', d => QuizApp.toast(d.message));
+  });
+
+  function showQuestion(data) {
+    currentQuestion = data;
+    selectedAnswer = -1;
+    submitted = false;
+
+    document.getElementById('waitingScreen').style.display = 'none';
+    document.getElementById('quizScreen').style.display = 'block';
+
+    document.getElementById('qIdx').textContent   = data.index + 1;
+    document.getElementById('qTotal').textContent  = data.total;
+    document.getElementById('qScore').textContent  = data.score;
+    document.getElementById('qText').textContent   = data.title;
+    document.getElementById('progBar').style.width = `${(data.index + 1) / data.total * 100}%`;
+
+    // 渲染选项
+    const wrap = document.getElementById('optionsWrap');
+    wrap.innerHTML = '';
+    data.options.forEach((opt, i) => {
+      const div = document.createElement('div');
+      div.className = 'option';
+      div.innerHTML = `
+        <div class="opt-label">${LABELS[i]}</div>
+        <div class="opt-text">${opt}</div>
+        <div class="opt-mark"></div>`;
+      div.onclick = () => selectOption(i);
+      wrap.appendChild(div);
+    });
+
+    document.getElementById('actionWrap').style.display = 'block';
+    document.getElementById('resultBanner').style.display = 'none';
+    document.getElementById('submitBtn').disabled = true;
+  }
+
+  function selectOption(i) {
+    if (submitted) return;
+    selectedAnswer = i;
+    document.querySelectorAll('.option').forEach((el, idx) => {
+      el.classList.toggle('selected', idx === i);
+    });
+    document.getElementById('submitBtn').disabled = false;
+  }
+
+  function submitAnswer() {
+    if (selectedAnswer === -1 || submitted) return;
+    submitted = true;
+    document.getElementById('submitBtn').disabled = true;
+
+    QuizApp.on('answer_result', (d) => {
+      document.getElementById('totalScore').textContent = d.totalScore;
+      // 标记选项颜色
+      document.querySelectorAll('.option').forEach((el, idx) => {
+        el.classList.remove('selected');
+        if (idx === d.correctAnswer) {
+          el.classList.add('correct');
+          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark c">✓</span>';
+        } else if (idx === selectedAnswer && !d.isCorrect) {
+          el.classList.add('wrong');
+          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark w">✗</span>';
+        }
+      });
+      // 结果横幅
+      const banner = document.getElementById('resultBanner');
+      banner.style.display = 'block';
+      banner.className = `result-banner ${d.isCorrect ? 'banner-correct' : 'banner-wrong'}`;
+      banner.innerHTML = `
+        <span class="banner-emoji">${d.isCorrect ? '🎉' : '😢'}</span>
+        <div class="banner-title">${d.isCorrect ? '回答正确！' : '回答错误'}</div>
+        ${d.isCorrect ? `<div class="banner-score">+${d.earned} 分</div>` : ''}
+        <div class="banner-wait">等待下一题...</div>`;
+      document.getElementById('actionWrap').style.display = 'none';
+    }, true);
+
+    QuizApp.send({ type: 'submit_answer', answer: selectedAnswer });
+  }
+</script>
+</body>
+</html>

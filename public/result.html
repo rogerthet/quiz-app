@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>答题结果</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .result-header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      padding: 48px 24px 40px; text-align: center;
+    }
+    .trophy { font-size: 64px; display: block; }
+    .result-title { font-size: 30px; font-weight: 800; color: #fff; margin: 12px 0 6px; }
+    .result-sub { font-size: 14px; color: rgba(255,255,255,.75); }
+
+    /* 我的成绩 */
+    .my-card { text-align: center; }
+    .my-label { font-size: 12px; color: #aaa; font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+    .my-row { display: flex; justify-content: center; align-items: center; gap: 24px; margin-bottom: 6px; }
+    .my-rank { font-size: 40px; font-weight: 900; }
+    .my-score { font-size: 40px; font-weight: 900; color: var(--primary); }
+    .my-name  { font-size: 16px; color: #666; }
+
+    /* 颁奖台 */
+    .podium-wrap { display: flex; justify-content: center; align-items: flex-end; gap: 6px; padding: 0 16px 0; }
+    .podium-item { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .p-crown { font-size: 28px; line-height: 1.2; }
+    .p-avatar {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--primary-light));
+      color: #fff; font-size: 20px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 6px;
+    }
+    .p-avatar.gold { background: linear-gradient(135deg,#FFD700,#FFA500); width:60px; height:60px; font-size:24px; }
+    .p-name  { font-size: 12px; font-weight: 700; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+    .p-score { font-size: 11px; color: var(--primary); font-weight: 700; margin: 2px 0 6px; }
+    .p-bar   { width: 100%; display: flex; align-items: flex-start; justify-content: center; border-radius: 10px 10px 0 0; padding-top: 10px; }
+    .p-bar-1 { height: 90px;  background: linear-gradient(180deg,#FFD700,#FFA500); }
+    .p-bar-2 { height: 64px;  background: linear-gradient(180deg,#C0C0C0,#A0A0A0); }
+    .p-bar-3 { height: 44px;  background: linear-gradient(180deg,#CD7F32,#B87333); }
+    .p-medal { font-size: 26px; }
+
+    /* 排名列表 */
+    .rank-list { background: #fff; margin: 0 16px; border-radius: 20px; overflow: hidden; box-shadow: var(--shadow); }
+    .rank-item {
+      display: flex; align-items: center; padding: 14px 18px;
+      border-bottom: 1px solid #f5f5fa;
+    }
+    .rank-item:last-child { border-bottom: none; }
+    .rank-item.me { background: linear-gradient(135deg,rgba(108,99,255,.07),rgba(156,143,255,.07)); }
+    .rk-num   { width: 40px; text-align: center; font-size: 22px; }
+    .rk-num-text { font-size: 15px; font-weight: 800; color: #bbb; }
+    .rk-avatar {
+      width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg,var(--primary),var(--primary-light));
+      color: #fff; font-size: 16px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 12px;
+    }
+    .rk-name { flex: 1; font-size: 15px; font-weight: 600; }
+    .me-tag  { font-size: 12px; color: var(--primary); font-weight: 700; }
+    .rk-score { font-size: 18px; font-weight: 900; color: var(--primary); }
+
+    .section-title { font-size: 15px; font-weight: 700; color: var(--text); padding: 6px 16px 12px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="result-header">
+    <span class="trophy">🏆</span>
+    <div class="result-title">答题结束</div>
+    <div class="result-sub">最终排名出炉</div>
+  </div>
+
+  <!-- 我的成绩 -->
+  <div class="card my-card" id="myCard" style="display:none">
+    <div class="my-label">我的成绩</div>
+    <div class="my-row">
+      <div class="my-rank" id="myRankEl"></div>
+      <div class="my-score" id="myScoreEl"></div>
+    </div>
+    <div class="my-name" id="myNameEl"></div>
+  </div>
+
+  <!-- 颁奖台 -->
+  <div id="podiumSection" style="display:none">
+    <div class="section-title">🎖️ 颁奖台</div>
+    <div class="podium-wrap" id="podiumWrap"></div>
+  </div>
+
+  <!-- 完整排名 -->
+  <div style="margin-top:16px">
+    <div class="section-title">📋 完整排名</div>
+    <div class="rank-list" id="rankList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+<script>
+  const myId = sessionStorage.getItem('playerId') || '';
+  let ranking = [];
+  try { ranking = JSON.parse(sessionStorage.getItem('ranking') || '[]'); } catch {}
+
+  if (!ranking.length) {
+    // 如果没有数据，等待服务端推送（管理员页面直接跳转也会带数据）
+    QuizApp.connect(() => {
+      QuizApp.on('quiz_ended', d => { ranking = d.ranking; render(); });
+    });
+  } else {
+    render();
+  }
+
+  function render() {
+    // 我的成绩
+    const me = ranking.find(p => p.id === myId);
+    if (me) {
+      document.getElementById('myCard').style.display = 'block';
+      const rankEmoji = me.rank === 1 ? '🥇' : me.rank === 2 ? '🥈' : me.rank === 3 ? '🥉' : `第 ${me.rank} 名`;
+      document.getElementById('myRankEl').textContent  = rankEmoji;
+      document.getElementById('myScoreEl').textContent = me.score + ' 分';
+      document.getElementById('myNameEl').textContent  = me.name;
+    }
+
+    // 颁奖台
+    const top3 = ranking.slice(0, 3);
+    if (top3.length) {
+      document.getElementById('podiumSection').style.display = 'block';
+      const order = [top3[1], top3[0], top3[2]].filter(Boolean); // 左2，中1，右3
+      const barClass = [2, 1, 3];
+      const medals   = ['🥈','🥇','🥉'];
+      const wrap = document.getElementById('podiumWrap');
+      order.forEach((p, i) => {
+        if (!p) return;
+        const isFirst = p.rank === 1;
+        const div = document.createElement('div');
+        div.className = 'podium-item';
+        div.innerHTML = `
+          ${isFirst ? '<div class="p-crown">👑</div>' : ''}
+          <div class="p-avatar ${isFirst ? 'gold' : ''}">${p.name[0]}</div>
+          <div class="p-name">${p.name}</div>
+          <div class="p-score">${p.score}分</div>
+          <div class="p-bar p-bar-${barClass[i]}"><span class="p-medal">${medals[i]}</span></div>`;
+        wrap.appendChild(div);
+      });
+    }
+
+    // 完整排名
+    const list = document.getElementById('rankList');
+    ranking.forEach(p => {
+      const div = document.createElement('div');
+      div.className = `rank-item ${p.id === myId ? 'me' : ''}`;
+      const rankEl = p.rank <= 3
+        ? ['🥇','🥈','🥉'][p.rank - 1]
+        : `<span class="rk-num-text">${p.rank}</span>`;
+      div.innerHTML = `
+        <div class="rk-num">${rankEl}</div>
+        <div class="rk-avatar">${p.name[0]}</div>
+        <div class="rk-name">${p.name}${p.id === myId ? ' <span class="me-tag">(我)</span>' : ''}</div>
+        <div class="rk-score">${p.score} 分</div>`;
+      list.appendChild(div);
+    });
+  }
+</script>
+</body>
+</html>

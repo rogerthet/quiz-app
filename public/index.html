@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>趣味答题</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { background: linear-gradient(160deg, #f0effe 0%, #e8e4ff 40%, #f5f5fa 100%); min-height: 100vh; }
+    .hero { padding: 56px 24px 48px; }
+    .online-badge {
+      display: inline-block; margin-top: 14px;
+      background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
+      border-radius: 20px; padding: 6px 18px; font-size: 13px; color: #fff;
+    }
+    .admin-toggle {
+      text-align: center; padding: 8px 16px;
+      color: var(--primary-light); font-size: 13px; cursor: pointer;
+      letter-spacing: 1px;
+    }
+    .admin-card { display: none; }
+    .admin-card.open { display: block; }
+    .footer { text-align: center; font-size: 12px; color: #bbb; margin-top: 8px; padding-bottom: 24px; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <!-- Hero -->
+  <div class="hero">
+    <span class="hero-icon">🎯</span>
+    <div class="hero-title">趣味答题</div>
+    <div class="hero-sub">实时竞技 · 智慧比拼</div>
+    <div class="online-badge" id="onlineBadge" style="display:none">🟢 <span id="onlineCount">0</span> 人在线等待</div>
+  </div>
+
+  <!-- 玩家加入 -->
+  <div class="card">
+    <div class="card-title">👤 加入答题</div>
+    <label>你的昵称</label>
+    <input type="text" id="playerName" placeholder="输入昵称（最多10字）" maxlength="10">
+    <button class="btn btn-primary mt16" id="joinBtn" onclick="joinAsPlayer()">立即加入</button>
+  </div>
+
+  <!-- 管理员入口 -->
+  <div class="admin-toggle" onclick="toggleAdmin()">
+    <span id="adminToggleText">▼ 管理员入口</span>
+  </div>
+  <div class="card admin-card" id="adminCard">
+    <div class="card-title">⚙️ 管理员登录</div>
+    <label>管理员密码</label>
+    <input type="password" id="adminPwd" placeholder="输入密码">
+    <button class="btn btn-ghost mt16" onclick="loginAsAdmin()">进入管理后台</button>
+  </div>
+
+  <div class="footer">支持最多 30 人同时在线答题</div>
+</div>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+<script>
+  let adminOpen = false;
+
+  // 连接 WS 获取在线人数
+  QuizApp.connect(() => {
+    QuizApp.on('player_count', d => {
+      const badge = document.getElementById('onlineBadge');
+      document.getElementById('onlineCount').textContent = d.count;
+      badge.style.display = d.count > 0 ? 'inline-block' : 'none';
+    });
+  });
+
+  function toggleAdmin() {
+    adminOpen = !adminOpen;
+    document.getElementById('adminCard').classList.toggle('open', adminOpen);
+    document.getElementById('adminToggleText').textContent = adminOpen ? '▲ 收起管理员入口' : '▼ 管理员入口';
+  }
+
+  function joinAsPlayer() {
+    const name = document.getElementById('playerName').value.trim();
+    if (!name) return QuizApp.toast('请输入昵称');
+
+    const btn = document.getElementById('joinBtn');
+    btn.disabled = true; btn.textContent = '连接中...';
+
+    sessionStorage.setItem('playerName', name);
+
+    QuizApp.connect(() => {
+      QuizApp.on('join_success', (d) => {
+        sessionStorage.setItem('playerId', d.playerId);
+        // 等待答题开始
+        QuizApp.on('quiz_started', () => { location.href = '/quiz.html'; });
+        btn.textContent = `✅ 已加入，等待开始（${d.playerCount}人）`;
+        // 实时更新人数
+        QuizApp.on('player_count', d2 => { btn.textContent = `✅ 已加入，等待开始（${d2.count}人）`; });
+      });
+      QuizApp.on('error', (d) => {
+        btn.disabled = false; btn.textContent = '立即加入';
+        QuizApp.toast(d.message);
+      });
+      QuizApp.send({ type: 'join_player', name });
+    });
+  }
+
+  function loginAsAdmin() {
+    const pw = document.getElementById('adminPwd').value.trim();
+    if (!pw) return QuizApp.toast('请输入密码');
+
+    sessionStorage.setItem('adminPassword', pw);
+
+    QuizApp.connect(() => {
+      QuizApp.on('admin_joined', () => { location.href = '/admin.html'; });
+      QuizApp.on('error', (d) => QuizApp.toast(d.message));
+      QuizApp.send({ type: 'join_admin', password: pw });
+    });
+  }
+
+  // 回车键提交
+  document.getElementById('playerName').addEventListener('keydown', e => { if (e.key === 'Enter') joinAsPlayer(); });
+  document.getElementById('adminPwd').addEventListener('keydown', e => { if (e.key === 'Enter') loginAsAdmin(); });
+</script>
+</body>
+</html>

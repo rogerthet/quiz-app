@@ -35,6 +35,19 @@
     }
     .correct-btn.active { border-color: var(--success); background: var(--success); color: #fff; }
     .opt-row input { flex: 1; padding: 12px 14px; }
+    .del-opt-btn {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      border: none; background: #fff0f0; color: var(--danger);
+      font-size: 16px; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .add-opt-btn {
+      display: flex; align-items: center; gap: 6px;
+      color: var(--primary); font-size: 13px; font-weight: 700;
+      background: none; border: 2px dashed var(--primary-light);
+      border-radius: 12px; padding: 8px 16px; cursor: pointer;
+      margin-top: 4px; width: 100%;
+    }
 
     /* 分值 */
     .score-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
@@ -103,7 +116,8 @@
   });
 
   function clone(q) {
-    return { id: q.id || uid(), title: q.title || '', options: [...(q.options || ['','','',''])], correctAnswer: q.correctAnswer ?? 0, score: q.score || 10 };
+    const opts = q.options && q.options.length >= 2 ? [...q.options] : ['', ''];
+    return { id: q.id || uid(), title: q.title || '', options: opts, correctAnswer: q.correctAnswer ?? 0, score: q.score || 10 };
   }
   function uid() { return 'q' + Date.now() + Math.random().toString(36).slice(2,6); }
 
@@ -137,34 +151,35 @@
     titleInput.oninput = (e) => { questions[qi].title = e.target.value; };
     card.appendChild(titleInput);
 
-    // 选项
+    // 选项标签
     const optLabel = document.createElement('label');
-    optLabel.textContent = '选项（点击左侧圆钮设置正确答案）';
+    optLabel.textContent = `选项（${q.options.length} 个，点左侧圆钮设置正确答案）`;
     optLabel.style.marginTop = '14px';
+    optLabel.id = `optlabel-${qi}`;
     card.appendChild(optLabel);
 
+    // 选项列表
     q.options.forEach((opt, oi) => {
-      const row = document.createElement('div'); row.className = 'opt-row';
-      const cb = document.createElement('button');
-      cb.className = `correct-btn ${q.correctAnswer === oi ? 'active' : ''}`;
-      cb.textContent = q.correctAnswer === oi ? '✓' : LABELS[oi];
-      cb.id = `cb-${qi}-${oi}`;
-      cb.onclick = () => setCorrect(qi, oi);
-      const inp = document.createElement('input');
-      inp.type = 'text'; inp.value = opt; inp.placeholder = `选项 ${LABELS[oi]}`;
-      inp.oninput = (e) => { questions[qi].options[oi] = e.target.value; };
-      row.appendChild(cb); row.appendChild(inp);
-      card.appendChild(row);
+      card.appendChild(buildOptRow(q, qi, oi, opt));
     });
 
+    // 添加选项按钮（最多4个）
+    if (q.options.length < 4) {
+      const addOptBtn = document.createElement('button');
+      addOptBtn.className = 'add-opt-btn';
+      addOptBtn.innerHTML = '＋ 添加选项';
+      addOptBtn.onclick = () => addOption(qi);
+      card.appendChild(addOptBtn);
+    }
+
     // 分值
-    const scoreLabel = document.createElement('label'); scoreLabel.textContent = '分值'; scoreLabel.style.marginTop = '10px';
+    const scoreLabel = document.createElement('label'); scoreLabel.textContent = '分值'; scoreLabel.style.marginTop = '14px';
     card.appendChild(scoreLabel);
     const scoreRow = document.createElement('div'); scoreRow.className = 'score-row';
     const scoreInp = document.createElement('input');
     scoreInp.type = 'number'; scoreInp.value = q.score; scoreInp.min = 1;
     scoreInp.oninput = (e) => { questions[qi].score = parseInt(e.target.value) || 10; };
-    scoreRow.innerHTML = ''; scoreRow.appendChild(scoreInp);
+    scoreRow.appendChild(scoreInp);
     const unit = document.createElement('span'); unit.className = 'score-unit'; unit.textContent = '分';
     scoreRow.appendChild(unit);
     card.appendChild(scoreRow);
@@ -172,9 +187,47 @@
     return card;
   }
 
+  function buildOptRow(q, qi, oi, opt) {
+    const row = document.createElement('div'); row.className = 'opt-row';
+    // 正确答案按钮
+    const cb = document.createElement('button');
+    cb.className = `correct-btn ${q.correctAnswer === oi ? 'active' : ''}`;
+    cb.textContent = q.correctAnswer === oi ? '✓' : LABELS[oi];
+    cb.id = `cb-${qi}-${oi}`;
+    cb.onclick = () => setCorrect(qi, oi);
+    // 输入框
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.value = opt; inp.placeholder = `选项 ${LABELS[oi]}`;
+    inp.oninput = (e) => { questions[qi].options[oi] = e.target.value; };
+    row.appendChild(cb); row.appendChild(inp);
+    // 删除选项按钮（最少2个时隐藏）
+    if (q.options.length > 2) {
+      const delOpt = document.createElement('button');
+      delOpt.className = 'del-opt-btn'; delOpt.textContent = '✕';
+      delOpt.onclick = () => removeOption(qi, oi);
+      row.appendChild(delOpt);
+    }
+    return row;
+  }
+
+  function addOption(qi) {
+    if (questions[qi].options.length >= 4) return;
+    questions[qi].options.push('');
+    renderAll();
+  }
+
+  function removeOption(qi, oi) {
+    if (questions[qi].options.length <= 2) return;
+    questions[qi].options.splice(oi, 1);
+    // 如果删除的是正确答案，重置为第0个
+    if (questions[qi].correctAnswer >= questions[qi].options.length) {
+      questions[qi].correctAnswer = 0;
+    }
+    renderAll();
+  }
+
   function setCorrect(qi, oi) {
     questions[qi].correctAnswer = oi;
-    // 更新所有按钮
     questions[qi].options.forEach((_, idx) => {
       const btn = document.getElementById(`cb-${qi}-${idx}`);
       if (!btn) return;
@@ -184,9 +237,8 @@
   }
 
   function addQuestion() {
-    questions.push({ id: uid(), title: '', options: ['','','',''], correctAnswer: 0, score: 10 });
+    questions.push({ id: uid(), title: '', options: ['', ''], correctAnswer: 0, score: 10 });
     renderAll();
-    // 滚到底部
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 
@@ -198,7 +250,6 @@
 
   function saveQuestions() {
     if (saving) return;
-    // 验证
     for (let i = 0; i < questions.length; i++) {
       if (!questions[i].title.trim()) return QuizApp.toast(`第 ${i+1} 题标题不能为空`);
       for (let j = 0; j < questions[i].options.length; j++) {

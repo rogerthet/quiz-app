@@ -126,9 +126,6 @@ wss.on('connection', (ws) => {
       case 'join_player': {
         const name = (msg.name || '').trim();
         if (!name) return send(ws, { type: 'error', message: '请输入昵称' });
-        if (state.status === 'running') {
-          return send(ws, { type: 'error', message: '答题已开始，无法加入' });
-        }
         if (state.status === 'ended') {
           return send(ws, { type: 'error', message: '本次答题已结束' });
         }
@@ -142,9 +139,16 @@ wss.on('connection', (ws) => {
 
         send(ws, { type: 'join_success', playerId: clientId, name, playerCount: getPlayerCount() });
 
-        // 广播玩家数量更新
         broadcast({ type: 'player_count', count: getPlayerCount() });
         broadcastToAdmins({ type: 'player_list', players: getRanking(), count: getPlayerCount() });
+
+        // 答题进行中：立即发送当前题目给刚连接的玩家
+        if (state.status === 'running' && state.currentQuestionIndex >= 0) {
+          const q = state.questions[state.currentQuestionIndex];
+          setTimeout(() => {
+            send(ws, { type: 'question', ...getSafeQuestion(q, state.currentQuestionIndex) });
+          }, 200);
+        }
         break;
       }
 

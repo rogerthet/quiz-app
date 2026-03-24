@@ -49,14 +49,35 @@ const QuizApp = (() => {
       if (role === 'player') {
         const name = sessionStorage.getItem('playerName');
         if (!name) { location.href = '/'; return; }
-        on('join_success', (d) => { sessionStorage.setItem('playerId', d.playerId); onSuccess && onSuccess(d); }, true);
-        on('error', (d) => { toast(d.message); location.href = '/'; }, true);
+
+        let errHandler, okHandler;
+        okHandler = (d) => {
+          sessionStorage.setItem('playerId', d.playerId);
+          // 加入成功后移除错误重定向处理器，防止后续普通错误误跳转
+          const idx = handlers.findIndex(h => h.cb === errHandler);
+          if (idx !== -1) handlers.splice(idx, 1);
+          onSuccess && onSuccess(d);
+        };
+        errHandler = (d) => { toast(d.message); location.href = '/'; };
+
+        on('join_success', okHandler, true);
+        on('error', errHandler, true);
         send({ type: 'join_player', name });
+
       } else if (role === 'admin') {
         const pw = sessionStorage.getItem('adminPassword');
         if (!pw) { location.href = '/'; return; }
-        on('admin_joined', (d) => { onSuccess && onSuccess(d); }, true);
-        on('error', (d) => { toast(d.message); location.href = '/'; }, true);
+
+        let errHandler, okHandler;
+        okHandler = (d) => {
+          const idx = handlers.findIndex(h => h.cb === errHandler);
+          if (idx !== -1) handlers.splice(idx, 1);
+          onSuccess && onSuccess(d);
+        };
+        errHandler = (d) => { toast(d.message); location.href = '/'; };
+
+        on('admin_joined', okHandler, true);
+        on('error', errHandler, true);
         send({ type: 'join_admin', password: pw });
       }
     });

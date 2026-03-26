@@ -84,10 +84,15 @@
     .banner-score { font-size: 36px; font-weight: 900; color: #fff; margin: 4px 0; }
     .banner-wait  { font-size: 13px; color: rgba(255,255,255,.8); margin-top: 6px; }
 
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
+    /* 等待揭晓横幅 */
+    .waiting-banner {
+      margin: 20px 16px 0; border-radius: 20px; padding: 28px 24px;
+      text-align: center; background: linear-gradient(135deg, #6C63FF, #9C8FFF);
+      box-shadow: 0 10px 28px rgba(108,99,255,.3); animation: slideUp .3s ease;
     }
+    .waiting-banner .banner-emoji { font-size: 48px; display: block; margin-bottom: 8px; }
+    .waiting-banner .banner-title { font-size: 22px; font-weight: 800; color: #fff; }
+    .waiting-banner .banner-wait  { font-size: 13px; color: rgba(255,255,255,.8); margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -139,6 +144,8 @@
     QuizApp.on('error', d => QuizApp.toast(d.message));
   });
 
+  let revealHandler = null;
+
   function showQuestion(data) {
     currentQuestion = data;
     selectedAnswer = -1;
@@ -153,7 +160,6 @@
     document.getElementById('qText').textContent   = data.title;
     document.getElementById('progBar').style.width = `${(data.index + 1) / data.total * 100}%`;
 
-    // 渲染选项
     const wrap = document.getElementById('optionsWrap');
     wrap.innerHTML = '';
     data.options.forEach((opt, i) => {
@@ -170,6 +176,43 @@
     document.getElementById('actionWrap').style.display = 'block';
     document.getElementById('resultBanner').style.display = 'none';
     document.getElementById('submitBtn').disabled = true;
+
+    // 移除上一题的揭晓处理器，注册新的
+    if (revealHandler) QuizApp.off(revealHandler);
+    revealHandler = (d) => {
+      document.getElementById('totalScore').textContent = d.totalScore;
+      document.getElementById('actionWrap').style.display = 'none';
+
+      document.querySelectorAll('.option').forEach((el, idx) => {
+        el.classList.remove('selected');
+        if (idx === d.correctAnswer) {
+          el.classList.add('correct');
+          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark c">✓</span>';
+        } else if (idx === d.myAnswer && !d.isCorrect) {
+          el.classList.add('wrong');
+          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark w">✗</span>';
+        }
+      });
+
+      const banner = document.getElementById('resultBanner');
+      banner.style.display = 'block';
+
+      if (!d.didAnswer) {
+        banner.className = 'result-banner banner-wrong';
+        banner.innerHTML = `
+          <span class="banner-emoji">😅</span>
+          <div class="banner-title">未作答</div>
+          <div class="banner-wait">正确答案：${LABELS[d.correctAnswer]}</div>`;
+      } else {
+        banner.className = `result-banner ${d.isCorrect ? 'banner-correct' : 'banner-wrong'}`;
+        banner.innerHTML = `
+          <span class="banner-emoji">${d.isCorrect ? '🎉' : '😢'}</span>
+          <div class="banner-title">${d.isCorrect ? '回答正确！' : '回答错误'}</div>
+          ${d.isCorrect ? `<div class="banner-score">+${d.earned} 分</div>` : `<div class="banner-wait">正确答案：${LABELS[d.correctAnswer]}</div>`}
+          <div class="banner-wait">等待下一题...</div>`;
+      }
+    };
+    QuizApp.on('answer_reveal', revealHandler);
   }
 
   function selectOption(i) {
@@ -186,28 +229,14 @@
     submitted = true;
     document.getElementById('submitBtn').disabled = true;
 
-    QuizApp.on('answer_result', (d) => {
-      document.getElementById('totalScore').textContent = d.totalScore;
-      // 标记选项颜色
-      document.querySelectorAll('.option').forEach((el, idx) => {
-        el.classList.remove('selected');
-        if (idx === d.correctAnswer) {
-          el.classList.add('correct');
-          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark c">✓</span>';
-        } else if (idx === selectedAnswer && !d.isCorrect) {
-          el.classList.add('wrong');
-          el.querySelector('.opt-mark').innerHTML = '<span class="opt-mark w">✗</span>';
-        }
-      });
-      // 结果横幅
+    QuizApp.on('answer_submitted', () => {
       const banner = document.getElementById('resultBanner');
       banner.style.display = 'block';
-      banner.className = `result-banner ${d.isCorrect ? 'banner-correct' : 'banner-wrong'}`;
+      banner.className = 'waiting-banner';
       banner.innerHTML = `
-        <span class="banner-emoji">${d.isCorrect ? '🎉' : '😢'}</span>
-        <div class="banner-title">${d.isCorrect ? '回答正确！' : '回答错误'}</div>
-        ${d.isCorrect ? `<div class="banner-score">+${d.earned} 分</div>` : ''}
-        <div class="banner-wait">等待下一题...</div>`;
+        <span class="banner-emoji">⏳</span>
+        <div class="banner-title">已提交，等待揭晓...</div>
+        <div class="banner-wait">管理员揭晓答案后显示结果</div>`;
       document.getElementById('actionWrap').style.display = 'none';
     }, true);
 

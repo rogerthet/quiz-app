@@ -18,8 +18,9 @@ const wss = new WebSocket.Server({ server });
 const ADMIN_PASSWORD = 'admin123'; // 管理员密码
 
 let state = {
-  status: 'waiting',        // waiting | running | ended
+  status: 'waiting',
   currentQuestionIndex: -1,
+  revealed: false,
   questions: [
     {
       id: uuidv4(),
@@ -215,6 +216,7 @@ wss.on('connection', (ws) => {
         if (state.status !== 'running') return send(ws, { type: 'error', message: '答题未开始' });
 
         state.currentQuestionIndex++;
+        state.revealed = false;
         if (state.currentQuestionIndex >= state.questions.length) {
           return send(ws, { type: 'error', message: '已经是最后一题，请结束答题' });
         }
@@ -246,28 +248,61 @@ wss.on('connection', (ws) => {
         }
         if (qi < 0 || qi >= state.questions.length) return;
 
-        const answerIndex = msg.answer;
-        const correct = state.questions[qi].correctAnswer;
-        const isCorrect = answerIndex === correct;
-        const earned = isCorrect ? state.questions[qi].score : 0;
+        // 只记录答案，不计分，等管理员揭晓
+        player.answers[qi] = msg.answer;
 
-        player.answers[qi] = answerIndex;
-        player.score += earned;
-
-        send(ws, {
-          type: 'answer_result',
-          isCorrect,
-          correctAnswer: correct,
-          earned,
-          totalScore: player.score
-        });
+        send(ws, { type: 'answer_submitted' });
 
         const answered = getAnsweredCount(qi);
+        const allAnswered = answered >= getPlayerCount();
         broadcastToAdmins({
           type: 'question_status',
           questionIndex: qi,
           answeredCount: answered,
-          playerCount: getPlayerCount()
+          playerCount: getPlayerCount(),
+          allAnswered
+        });
+        break;
+      }
+
+      // ── 管理员揭晓答案 ──
+      case 'reveal_answer': {
+        if (clientRole !== 'admin') return send(ws, { type: 'error', message: '无权限' });
+        if (state.status !== 'running') return send(ws, { type: 'error', message: '答题未开始' });
+        if (state.revealed) return;
+
+        const qi = state.currentQuestionIndex;
+        if (qi < 0) return send(ws, { type: 'error', message: '还没有题目' });
+
+        const correct = state.questions[qi].correctAnswer;
+        const qScore = state.questions[qi].score;
+
+        state.revealed = true;
+
+        // 给每位玩家发送个人结果并计分
+        players.forEach(p => {
+          const myAnswer = p.answers[qi];
+          const didAnswer = myAnswer !== undefined;
+          const isCorrect = didAnswer && myAnswer === correct;
+          const earned = isCorrect ? qScore : 0;
+          p.score += earned;
+
+          send(p.ws, {
+            type: 'answer_reveal',
+            isCorrect,
+            didAnswer,
+            correctAnswer: correct,
+            myAnswer: didAnswer ? myAnswer : -1,
+            earned,
+            totalScore: p.score
+          });
+        });
+
+        broadcastToAdmins({
+          type: 'reveal_done',
+          correctAnswer: correct,
+          questionIndex: qi,
+          players: getRanking()
         });
         break;
       }

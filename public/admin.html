@@ -68,8 +68,13 @@
       <div class="badge badge-success"><span id="answeredCount">0</span>/<span id="answeredTotal">0</span> 人已作答</div>
     </div>
     <div class="prog-bar-wrap"><div class="prog-bar" id="answerProgBar"></div></div>
+    <!-- 未发布题目 -->
+    <div id="noQuestion">
+      <button class="btn btn-primary" onclick="nextQuestion()" style="margin-bottom:12px">▶ 发布第一题</button>
+      <button class="btn btn-danger" onclick="confirmEnd()">结束答题</button>
+    </div>
     <!-- 揭晓前 -->
-    <div id="beforeReveal">
+    <div id="beforeReveal" style="display:none">
       <button class="btn btn-primary" id="revealBtn" onclick="revealAnswer()" style="margin-bottom:12px">
         🔍 揭晓答案
       </button>
@@ -129,6 +134,9 @@
     QuizApp.on('quiz_started', () => {
       state.status = 'running'; state.currentQuestionIndex = -1;
       applyState(state);
+      document.getElementById('noQuestion').style.display   = 'block';
+      document.getElementById('beforeReveal').style.display = 'none';
+      document.getElementById('afterReveal').style.display  = 'none';
     });
 
     QuizApp.on('question', d2 => {
@@ -141,6 +149,7 @@
       document.getElementById('answerProgBar').style.width = '0%';
       document.getElementById('nextBtn').textContent = d2.index >= d2.total - 1 ? '⚠️ 已是最后一题' : '下一题 →';
       // 重置揭晓状态
+      document.getElementById('noQuestion').style.display   = 'none';
       document.getElementById('beforeReveal').style.display = 'block';
       document.getElementById('afterReveal').style.display  = 'none';
       document.getElementById('revealBtn').textContent = '🔍 揭晓答案';
@@ -162,6 +171,7 @@
     QuizApp.on('reveal_done', d2 => {
       state.players = d2.players || [];
       updatePlayerList();
+      document.getElementById('noQuestion').style.display   = 'none';
       document.getElementById('beforeReveal').style.display = 'none';
       document.getElementById('afterReveal').style.display  = 'block';
     });
